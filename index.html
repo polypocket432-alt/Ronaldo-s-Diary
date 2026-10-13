@@ -52,7 +52,8 @@ input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;b
 .top button:hover{border-color:rgba(255,255,255,.45)}
 .chip.on{background:linear-gradient(135deg,var(--accent),var(--accent-2))!important;border-color:transparent!important}
 #banner:empty{display:none}
-#banner{background:var(--warn-bg);color:var(--warn-ink);padding:8px 16px;font-size:14px}
+#banner{background:var(--warn-bg);color:var(--warn-ink);padding:8px 16px;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+#banner .bk{background:var(--warn-ink);color:var(--warn-bg);border:0;font-weight:600;padding:6px 12px;font-size:14px}
 
 /* layout */
 .layout{flex:1;display:grid;grid-template-columns:280px 1fr;min-height:0}
@@ -128,6 +129,31 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
 .dlist .en{flex-basis:100%;font-size:13px;color:var(--muted)}
 .dnote{margin:2px 0 0;font-size:13.5px;color:var(--muted);white-space:pre-wrap}
 .mini{align-self:flex-start;padding:3px 10px;font-size:13px;border-radius:999px}
+
+/* exercises tab */
+.exsearch{margin-bottom:10px}
+.exlist{display:flex;flex-direction:column;gap:8px}
+.exitem{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.exitem.open{border-color:var(--accent)}
+.exitem-h{width:100%;border:0;border-radius:0;background:none;display:flex;align-items:center;gap:10px;padding:12px 14px;text-align:left}
+.exitem-h:hover{background:var(--bg)}
+.exn{display:flex;flex-direction:column;min-width:0;flex:1}
+.exn b{font-size:15.5px}
+.exn .muted{font-size:12.5px}
+.exlast{display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right}
+.exlast .sr,.exhist .sr{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700;font-size:15px;white-space:nowrap}
+.trend{font-size:12px;font-weight:600}
+.trend.up{color:#18a058}.trend.down{color:var(--danger)}
+.chev{color:var(--muted);font-size:20px;transition:transform .15s}
+.exitem.open .chev{transform:rotate(90deg)}
+.exitem-b{padding:4px 14px 14px;border-top:1px solid var(--line)}
+.exbest{font-size:13.5px;margin:10px 0 4px}
+.exhist{list-style:none;margin:8px 0 0;padding:0}
+.exhist li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.exhist li:last-child{border-bottom:0}
+.exhist .hd{font-size:14px}
+.exhist li.latest .hd{font-weight:700}
+.exhist .en{flex-basis:100%;font-size:13px;color:var(--muted)}
 
 .empty{text-align:center;padding:60px 20px}
 .empty h2{margin:0 0 6px}
@@ -276,6 +302,7 @@ function save(msg){
     storageOk = localStorage.getItem(KEY) === s; // read back to confirm it really saved
   } catch(e){ storageOk = false; }
   if (!storageOk) msg = 'NOT saved, tap Back up now';
+  else if (msg) { db.unsaved = (db.unsaved || 0) + 1; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch(e){} }
   renderStatus();
   if (msg) toast(msg);
 }
@@ -305,10 +332,12 @@ function renderStatus(){
   $('#status').textContent = storageOk ? db.clients.length + ' clients · ' + db.sessions.length + ' sessions · saved on this device' : '';
   const b = $('#banner');
   if (!storageOk) { b.textContent = 'This browser is blocking saving. Use "Back up" before closing, or open the file in Chrome, Edge or Firefox.'; return; }
-  const stale = !db.lastBackup || (Date.now() - db.lastBackup) > 7*864e5;
-  if (db.sessions.length && stale) {
-    b.innerHTML = (db.lastBackup ? 'Last backup was ' + Math.floor((Date.now()-db.lastBackup)/864e5) + ' days ago. ' : 'No backup yet. ') +
-      'Data lives in this browser only, so <button class="link" id="bannerBackup">download a backup</button> now and then.';
+  const n = db.unsaved || 0;
+  const days = db.lastBackup ? Math.floor((Date.now() - db.lastBackup) / 864e5) : null;
+  // nudge once there are new changes and it's been a day, or after 5+ changes, or never backed up
+  if (db.sessions.length && n > 0 && (days === null || days >= 1 || n >= 5)) {
+    b.innerHTML = `<span>${n} change${n===1?'':'s'} not backed up${days!==null ? ' · last backup ' + (days===0?'today':days===1?'yesterday':days+' days ago') : ''}</span>
+      <button class="bk" id="bannerBackup">Back up now</button>`;
     $('#bannerBackup').onclick = exportJSON;
   } else b.textContent = '';
 }
@@ -372,10 +401,10 @@ function renderMain(){
     </div>
     <div class="tabs">
       <button data-tab="week" class="${state.tab==='week'?'on':''}">Week</button>
+      <button data-tab="exercises" class="${state.tab==='exercises'?'on':''}">Exercises</button>
       <button data-tab="history" class="${state.tab==='history'?'on':''}">History</button>
-      <button data-tab="progress" class="${state.tab==='progress'?'on':''}">Progress</button>
     </div>
-    <div id="tabBody">${state.tab==='week' ? weekHTML(ss) : state.tab==='history' ? historyHTML(ss) : progressHTML(ss)}</div>
+    <div id="tabBody">${state.tab==='week' ? weekHTML(ss) : state.tab==='exercises' ? exercisesHTML(ss) : historyHTML(ss)}</div>
   </div>`;
 
   $('#backBtn').onclick = () => { state.clientId = null; renderAll(); $('#search').focus(); };
@@ -388,7 +417,8 @@ function renderMain(){
     const s = db.sessions.find(x=>x.id===b.dataset.del);
     if (confirm('Delete the session from ' + longDate(s.date) + '?')) { db.sessions = db.sessions.filter(x=>x.id!==s.id); save('Session deleted'); renderAll(); }
   });
-  m.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => { state.progressEx = b.dataset.ex; renderMain(); });
+  m.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => { state.progressEx = state.progressEx === b.dataset.ex ? null : b.dataset.ex; renderMain(); });
+  const xs = $('#exSearch'); if (xs) xs.oninput = e => { state.exQuery = e.target.value; const pos = e.target.selectionStart; renderMain(); const n = $('#exSearch'); n.focus(); n.setSelectionRange(pos,pos); };
   const fl = $('#firstLog'); if (fl) fl.onclick = () => openSession(null);
   m.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => { state.weekOffset = b.dataset.wk === '0' ? 0 : state.weekOffset + Number(b.dataset.wk); renderMain(); });
   m.querySelectorAll('[data-logday]').forEach(b => b.onclick = () => openSession(null, null, b.dataset.logday));
@@ -453,33 +483,45 @@ function historyHTML(ss){
   </div>`).join('');
 }
 
-function progressHTML(ss){
+function exercisesHTML(ss){
   const byEx = new Map();
   [...ss].reverse().forEach(s => s.exercises.forEach(e => {
     const k = e.name.trim().toLowerCase(); if (!k) return;
     if (!byEx.has(k)) byEx.set(k, {name:e.name, rows:[]});
     byEx.get(k).rows.push({date:s.date, ...e});
   }));
-  if (!byEx.size) return `<p class="muted">Log some sessions to see progress here.</p>`;
-  const keys = [...byEx.keys()].sort((a,b) => byEx.get(b).rows.length - byEx.get(a).rows.length || a.localeCompare(b));
-  if (!state.progressEx || !byEx.has(state.progressEx)) state.progressEx = keys[0];
-  const ex = byEx.get(state.progressEx);
-  const chips = keys.map(k => `<button class="chip ${k===state.progressEx?'on':''}" data-ex="${esc(k)}">${esc(byEx.get(k).name)} <span class="muted">${byEx.get(k).rows.length}</span></button>`).join('');
-
-  const wPts = ex.rows.map(r => ({date:r.date, val:num(r.weight)})).filter(p => p.val !== null);
-  const rPts = ex.rows.map(r => ({date:r.date, val:num(r.reps)})).filter(p => p.val !== null);
-  const useW = wPts.length >= 2;
-  const pts = useW ? wPts : rPts;
-  const best = pts.length ? Math.max(...pts.map(p=>p.val)) : null;
-
-  return `<div class="chips">${chips}</div>
-  <div class="card">
-    <div class="card-h"><h3>${esc(ex.name)}</h3><span class="muted">${best!==null ? 'Best: '+best+(useW?' kg':' reps') : ''}</span></div>
-    ${chart(pts, useW ? 'kg' : 'reps')}
-  </div>
-  <div class="card"><table><thead><tr><th>Date</th><th class="num">Sets</th><th class="num">Reps</th><th class="num">Weight</th><th>Notes</th></tr></thead><tbody>
-  ${[...ex.rows].reverse().map(r => `<tr><td>${longDate(r.date)}</td><td class="num">${esc(r.sets)}</td><td class="num">${esc(r.reps)}</td><td class="num">${esc(r.weight)}</td><td class="muted">${esc(r.notes)}</td></tr>`).join('')}
-  </tbody></table></div>`;
+  if (!byEx.size) return `<p class="muted">Log some sessions and every exercise this client does will appear here.</p>`;
+  const keys = [...byEx.keys()].sort((a,b) => {
+    const la = byEx.get(a).rows.at(-1).date, lb = byEx.get(b).rows.at(-1).date;
+    return lb.localeCompare(la) || a.localeCompare(b);
+  });
+  const q = (state.exQuery || '').trim().toLowerCase();
+  const shown = keys.filter(k => k.includes(q));
+  return `<input id="exSearch" type="search" class="exsearch" placeholder="Filter ${keys.length} exercises…" value="${esc(state.exQuery||'')}" autocomplete="off">
+  <div class="exlist">
+  ${shown.length ? shown.map(k => {
+    const ex = byEx.get(k), rows = ex.rows, last = rows.at(-1), open = state.progressEx === k;
+    const wPts = rows.map(r => ({date:r.date, val:num(r.weight)})).filter(p => p.val !== null);
+    const rPts = rows.map(r => ({date:r.date, val:num(r.reps)})).filter(p => p.val !== null);
+    const useW = wPts.length >= 2, pts = useW ? wPts : rPts;
+    const best = pts.length ? Math.max(...pts.map(p=>p.val)) : null;
+    const prev = rows.length > 1 ? rows.at(-2) : null;
+    const dW = prev && num(last.weight)!==null && num(prev.weight)!==null ? num(last.weight) - num(prev.weight) : null;
+    const trend = dW ? `<span class="trend ${dW>0?'up':'down'}">${dW>0?'▲':'▼'} ${Math.abs(Math.round(dW*10)/10)} kg</span>` : '';
+    return `<div class="exitem ${open?'open':''}">
+      <button class="exitem-h" data-ex="${esc(k)}" aria-expanded="${open}">
+        <span class="exn"><b>${esc(ex.name)}</b><span class="muted">${shortDate(last.date)} · ${rows.length} time${rows.length===1?'':'s'}</span></span>
+        <span class="exlast"><span class="sr">${esc(setLine(last)) || '–'}</span>${trend}</span>
+        <span class="chev">›</span>
+      </button>
+      ${open ? `<div class="exitem-b">
+        ${pts.length >= 2 ? `<div class="exbest muted">${best!==null ? 'Best: <b>'+best+(useW?' kg':' reps')+'</b>' : ''}</div>${chart(pts, useW ? 'kg' : 'reps')}` : ''}
+        <ul class="exhist">${[...rows].reverse().map((r,i) => `<li class="${i===0?'latest':''}">
+          <span class="hd">${longDate(r.date)}</span><span class="sr">${esc(setLine(r)) || '–'}</span>${r.notes?`<span class="en">${esc(r.notes)}</span>`:''}</li>`).join('')}</ul>
+      </div>` : ''}
+    </div>`;
+  }).join('') : `<p class="muted">No exercise matching “${esc(state.exQuery)}”.</p>`}
+  </div>`;
 }
 
 function chart(points, unit){
@@ -571,7 +613,7 @@ $('#sessionForm').addEventListener('submit', e => {
     save('Session saved');
   }
   $('#sessionDlg').close();
-  if (state.tab === 'progress') state.tab = 'week';
+  
   renderAll();
 });
 
@@ -627,7 +669,7 @@ $('#search').addEventListener('keydown', e => {
 });
 $('#clientList').addEventListener('click', e => {
   const b = e.target.closest('.client'); if (!b) return;
-  if (state.clientId !== b.dataset.id){ state.progressEx = null; state.tab = 'week'; state.weekOffset = 0; }
+  if (state.clientId !== b.dataset.id){ state.progressEx = null; state.exQuery = ''; state.tab = 'week'; state.weekOffset = 0; }
   state.clientId = b.dataset.id; renderAll();
 });
 $('#newClientBtn').onclick = () => openClient(null, state.query.trim());
@@ -638,11 +680,23 @@ document.addEventListener('keydown', e => {
 });
 
 /* ---------- backup / restore / csv ---------- */
-function exportJSON(){
-  db.lastBackup = Date.now();
-  save();
-  download('training-diary-backup-' + today() + '.json', JSON.stringify(db, null, 2), 'application/json');
-  toast('Backup downloaded');
+async function exportJSON(){
+  const name = 'training-diary-backup-' + today() + '.json';
+  const done = msg => { db.lastBackup = Date.now(); db.unsaved = 0; save(); toast(msg); };
+  const body = JSON.stringify(Object.assign({}, db, {lastBackup: Date.now(), unsaved: 0}));
+  // On phones: open the share sheet so it can go straight to iCloud Drive / Google Drive / Files
+  try {
+    const file = new File([body], name, {type: 'application/json'});
+    if (navigator.canShare && navigator.canShare({files:[file]})) {
+      await navigator.share({files:[file], title: 'Training Diary backup'});
+      done('Backup saved');
+      return;
+    }
+  } catch(e){
+    if (e && e.name === 'AbortError') { toast('Backup cancelled'); return; }
+  }
+  download(name, body, 'application/json');
+  done('Backup downloaded');
 }
 $('#exportBtn').onclick = exportJSON;
 $('#importBtn').onclick = () => $('#importFile').click();
@@ -656,7 +710,7 @@ $('#importFile').addEventListener('change', e => {
       if (db.sessions.length || db.clients.length){
         if (!confirm('Replace everything currently here with this backup (' + d.clients.length + ' clients, ' + d.sessions.length + ' sessions)?')) return;
       }
-      db = Object.assign({lastBackup:Date.now()}, d);
+      db = Object.assign({}, d, {lastBackup: Date.now(), unsaved: 0});
       state.clientId = null; save('Backup restored'); renderAll();
     } catch(err){ alert('That file is not a Training Diary backup.'); }
     finally { e.target.value = ''; }
